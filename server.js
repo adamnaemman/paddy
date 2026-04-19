@@ -108,16 +108,26 @@ app.post('/api/diagnose', upload.single('image'), async (req, res) => {
 });
 
 // Serve static files from the Vite build directory
-app.use(express.static(path.join(__dirname, 'dist')));
+const DIST_PATH = path.join(process.cwd(), 'dist');
+console.log(`INFO: Serving static files from: ${DIST_PATH}`);
+
+app.use(express.static(DIST_PATH));
 
 // SPA support: any unknown route serves index.html
-// But only if it's not a request for a static file (like .js, .css)
 app.use((req, res) => {
-  if (req.path.includes('.')) {
-    res.status(404).end();
-  } else {
-    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  // If it's a direct file request (has extension) but reached here, it's truly a 404
+  if (req.path.includes('.') && !req.path.endsWith('.html')) {
+    console.warn(`WARN: File not found: ${req.path}`);
+    return res.status(404).end();
   }
+  
+  const indexPath = path.join(DIST_PATH, 'index.html');
+  res.sendFile(indexPath, (err) => {
+    if (err) {
+      console.error(`ERROR: Failed to send index.html: ${err.message}`);
+      res.status(500).send('Frontend not found. Please run "npm run build".');
+    }
+  });
 });
 
 const PORT = process.env.PORT || 8080;
