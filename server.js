@@ -22,7 +22,7 @@ if (!API_KEY) {
 }
 const genAI = new GoogleGenerativeAI(API_KEY);
 
-const MODEL_NAME = 'gemini-1.5-flash';
+const MODEL_NAME = 'gemini-2.5-flash';
 const SYSTEM_INSTRUCTION = `
     Kau adalah Pak Mat, seorang pakar penanaman padi yang dah berpengalaman lebih 30 tahun di Malaysia.
     Gaya percakapan kau mestilah mesra, macam sembang kat kedai kopi, tapi penuh dengan ilmu teknikal yang praktikal.
@@ -43,7 +43,11 @@ const SYSTEM_INSTRUCTION = `
 app.post('/api/chat', async (req, res) => {
   try {
     const { message, history } = req.body;
-    const model = genAI.getGenerativeModel({ model: MODEL_NAME, systemInstruction: SYSTEM_INSTRUCTION });
+    const model = genAI.getGenerativeModel({ 
+      model: MODEL_NAME, 
+      systemInstruction: SYSTEM_INSTRUCTION,
+      thinking: true 
+    });
     
     const chat = model.startChat({
       history: (history || []).map(m => ({
@@ -57,8 +61,14 @@ app.post('/api/chat', async (req, res) => {
     res.json({ text: response.text() });
 
   } catch (error) {
-    console.error('Proxy Chat Error:', error);
-    res.status(500).json({ error: 'Maaf mat, Pak Mat pening sikit tadi. Cuba tanya balik.' });
+    console.error('--- PROXY CHAT ERROR ---');
+    console.error('Message:', error.message);
+    console.error('Stack:', error.stack);
+    if (error.response) {
+      console.error('Response Data:', JSON.stringify(error.response, null, 2));
+    }
+    console.error('------------------------');
+    res.status(500).json({ error: 'Maaf mat, Pak Mat pening sikit tadi. (Error: ' + (error.message || 'Unknown') + ')' });
   }
 });
 
@@ -71,7 +81,11 @@ app.post('/api/diagnose', upload.single('image'), async (req, res) => {
       return res.status(400).json({ error: 'Mana gambar bendang kau mat? Upload la dulu.' });
     }
 
-    const model = genAI.getGenerativeModel({ model: MODEL_NAME, systemInstruction: SYSTEM_INSTRUCTION });
+    const model = genAI.getGenerativeModel({ 
+      model: MODEL_NAME, 
+      systemInstruction: SYSTEM_INSTRUCTION,
+      thinking: true
+    });
     const promptText = req.body.prompt || "Pak Mat, tolong tengokkan gambar ni. Padi saya ni sakit apa ye?";
     
     const result = await model.generateContent([

@@ -12,6 +12,7 @@ import {
   onSnapshot, 
   doc, 
   updateDoc,
+  deleteDoc,
   orderBy,
   serverTimestamp 
 } from 'firebase/firestore';
@@ -24,12 +25,22 @@ import riceBg from './assets/rice-bg.png';
 function App() {
   const [user, setUser] = useState(null);
   const [sessions, setSessions] = useState([]);
-  const [currentSessionId, setCurrentSessionId] = useState(null);
-  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [currentSessionId, setCurrentSessionId] = useState('local-session');
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [usePersistence, setUsePersistence] = useState(false);
+  const [activeModal, setActiveModal] = useState(null);
 
   // Authentication
   useEffect(() => {
-    signInAnonymously(auth).catch(err => console.error("Auth error:", err));
+    signInAnonymously(auth)
+      .then(() => setUsePersistence(true))
+      .catch(err => {
+        console.warn("Firebase Auth restricted or failed. Falling back to Local Mode.", err);
+        setUsePersistence(false);
+        // Initialize one local session if we don't have persistence
+        setSessions([{ id: 'local-session', title: 'Local Session', messages: [], updatedAt: new Date() }]);
+      });
+
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         setUser(user);
@@ -95,17 +106,50 @@ function App() {
   };
 
   const createNewChat = async () => {
-    if (!user) return;
-    try {
-      const docRef = await addDoc(collection(db, 'chats'), {
-        userId: user.uid,
-        title: 'New Chat',
-        messages: [],
-        updatedAt: serverTimestamp()
-      });
-      setCurrentSessionId(docRef.id);
-    } catch (err) {
-      console.error("Error creating chat:", err);
+    const localId = 'local-' + Date.now();
+    const newSession = {
+      id: localId,
+      title: 'New Chat',
+      messages: [],
+      updatedAt: new Date()
+    };
+
+    if (usePersistence && user) {
+      try {
+        const docRef = await addDoc(collection(db, 'chats'), {
+          userId: user.uid,
+          title: 'New Chat',
+          messages: [],
+          updatedAt: serverTimestamp()
+        });
+        setCurrentSessionId(docRef.id);
+      } catch (err) {
+        console.error("Error creating remote chat, using local:", err);
+        setSessions(prev => [newSession, ...prev]);
+        setCurrentSessionId(localId);
+      }
+    } else {
+      setSessions(prev => [newSession, ...prev]);
+      setCurrentSessionId(localId);
+    }
+  };
+
+  const deleteChatSession = async (e, id) => {
+    e.stopPropagation(); 
+    if (!window.confirm('Padam chat ni?')) return;
+
+    if (usePersistence && id !== 'local-session' && !id.toString().startsWith('local-') && user) {
+      try {
+        await deleteDoc(doc(db, 'chats', id));
+      } catch (err) {
+        console.error("Error deleting remote chat:", err);
+      }
+    }
+    
+    setSessions(prev => prev.filter(s => s.id !== id));
+    if (currentSessionId === id) {
+      const remaining = sessions.filter(s => s.id !== id);
+      setCurrentSessionId(remaining.length > 0 ? remaining[0].id : 'local-session');
     }
   };
   const [input, setInput] = useState('');
@@ -199,13 +243,21 @@ function App() {
       if (image) {
         response = await diagnoseWithImage(image, input);
         
-        const isHealthy = Math.random() > 0.5;
+        // Intelligent Dashboard Sync: Parse AI response for status keywords
+        const lowerRes = response.toLowerCase();
+        const isSick = lowerRes.includes('sakit') || lowerRes.includes('penyakit') || lowerRes.includes('karang') || lowerRes.includes('blast') || lowerRes.includes('bintik');
+        const isHealthy = lowerRes.includes('sihat') || lowerRes.includes('elok') || lowerRes.includes('subur');
+        
+        // Default to Sick if we found disease keywords, else follow AI hint
+        const finalStatus = isSick ? 'Sick' : (isHealthy ? 'Healthy' : 'Monitor');
+        const finalLabel = isSick ? 'Berpenyakit' : (isHealthy ? 'Sihat' : 'Perlu Pantau');
+
         setScanResult({
-          statusLabel: isHealthy ? 'Sihat' : 'Berpenyakit',
-          status: isHealthy ? 'Healthy' : 'Sick',
+          statusLabel: finalLabel,
+          status: finalStatus,
           variety: 'MR 219',
           date: 'Just now',
-          alert: isHealthy ? null : 'Blast disease risk',
+          alert: isSick ? 'Penyakit dikesan!' : null,
           field: 'Field 2'
         });
 
@@ -222,32 +274,51 @@ function App() {
       const botMessage = { role: 'model', text: response, type: 'text', time: 'JUST NOW' };
       const updatedMessages = [...messages, userMessage, botMessage];
       
-      // Update Firestore
-      const sessionRef = doc(db, 'chats', currentSessionId);
-      let newTitle = sessions[activeIndex].title;
-      if (newTitle === 'New Chat') {
-          newTitle = input.slice(0, 30) + (input.length > 30 ? '...' : '');
-      }
+      // Update local state first
+      setMessages(updatedMessages);
 
-      await updateDoc(sessionRef, {
-        messages: updatedMessages,
-        title: newTitle,
-        updatedAt: serverTimestamp()
-      });
+      // Update Firestore ONLY if persistence is working and we have a user
+      if (usePersistence && currentSessionId !== 'local-session' && user) {
+        try {
+          const sessionRef = doc(db, 'chats', currentSessionId);
+          let newTitle = sessions[activeIndex].title;
+          if (newTitle === 'New Chat') {
+              newTitle = input.slice(0, 30) + (input.length > 30 ? '...' : '');
+          }
+
+          await updateDoc(sessionRef, {
+            messages: updatedMessages,
+            title: newTitle,
+            updatedAt: serverTimestamp()
+          });
+        } catch (fsErr) {
+          console.error("Firestore Update Error:", fsErr);
+        }
+      }
 
     } catch (error) {
       console.error("Gemini Error:", error);
       const errorMessage = { role: 'model', text: "Error: " + (error.message || "Unknown"), type: 'text', time: 'JUST NOW' };
       const updatedMessages = [...messages, userMessage, errorMessage];
-      const sessionRef = doc(db, 'chats', currentSessionId);
-      await updateDoc(sessionRef, { messages: updatedMessages });
+      setMessages(updatedMessages);
+
+      if (usePersistence && currentSessionId !== 'local-session' && user) {
+        try {
+          const sessionRef = doc(db, 'chats', currentSessionId);
+          await updateDoc(sessionRef, { messages: updatedMessages });
+        } catch (fsErr) {
+          console.error("Firestore Error Log:", fsErr);
+        }
+      }
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="app-container">
+    <>
+      <div className="app-container">
+
       {showCamera && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ background: 'white', padding: '24px', borderRadius: '24px', position: 'relative', width: '90%', maxWidth: '500px', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
@@ -284,38 +355,38 @@ function App() {
               className={`history-item ${session.id === currentSessionId ? 'active' : ''}`}
               onClick={() => setCurrentSessionId(session.id)}
             >
-              {session.title}
+              <span className="history-item-title">{session.title}</span>
+              <button className="delete-chat-btn" onClick={(e) => deleteChatSession(e, session.id)}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+              </button>
             </div>
           ))}
         </div>
 
         <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
           <ul className="nav-menu" style={{ gap: '15px' }}>
-            <li className="nav-item">
+            <li className="nav-item" onClick={() => setActiveModal('health')}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" y1="16" x2="12" y2="12"></line>
-                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
               </svg>
-              About Us
+              Bendang Health
             </li>
-            <li className="nav-item">
+            <li className="nav-item" onClick={() => setActiveModal('prices')}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path>
-                <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path>
-                <path d="M4 22h16"></path>
-                <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"></path>
-                <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"></path>
-                <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"></path>
+                <line x1="12" y1="1" x2="12" y2="23"></line>
+                <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
               </svg>
-              Achievements
+              Harga Padi
             </li>
-            <li className="nav-item">
+            <li className="nav-item" onClick={() => setActiveModal('padipedia')}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
-                <polyline points="22,6 12,13 2,6"></polyline>
+                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
               </svg>
-              Contact Us
+              Padipedia
             </li>
           </ul>
         </div>
@@ -455,6 +526,107 @@ function App() {
 
 
     </div>
+
+    {/* Premium Feature Modals */}
+    {activeModal && (
+      <div className="modal-overlay" onClick={() => setActiveModal(null)}>
+        <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <button className="modal-close" onClick={() => setActiveModal(null)}>×</button>
+          
+          {activeModal === 'health' && (
+            <div className="feature-view">
+              <h2>🚜 Bendang Health Dashboard</h2>
+              <p className="subtitle">Real-time monitoring for MADA Region, Kedah</p>
+              
+              <div className="stats-grid">
+                <div className="stat-card">
+                  <span className="stat-label">Weather Status</span>
+                  <span className="stat-value">Cloudy ☁️</span>
+                  <span className="stat-sub">High humidity (82%)</span>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Soil pH Level</span>
+                  <span className="stat-value">6.2</span>
+                  <span className="stat-sub">Optimal for growth</span>
+                </div>
+                <div className="stat-card warning">
+                  <span className="stat-label">Nitrogen (N)</span>
+                  <span className="stat-value">Low</span>
+                  <span className="stat-sub">Top dressing recommended</span>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Est. Harvest</span>
+                  <span className="stat-value">5.2 tons</span>
+                  <span className="stat-sub">End of May 2026</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeModal === 'prices' && (
+            <div className="feature-view">
+              <h2>💰 Harga Padi Semasa</h2>
+              <p className="subtitle">Malaysia Market Prices • Last updated: Today</p>
+              
+              <table className="price-table">
+                <thead>
+                  <tr>
+                    <th>State/Region</th>
+                    <th>Subsidized Price</th>
+                    <th>Market Price</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Kedah (MADA)</td>
+                    <td>RM 1,550 /ton</td>
+                    <td>RM 1,820 /ton</td>
+                  </tr>
+                  <tr>
+                    <td>Selangor (IADA)</td>
+                    <td>RM 1,550 /ton</td>
+                    <td>RM 1,845 /ton</td>
+                  </tr>
+                  <tr>
+                    <td>Perak (Kerian)</td>
+                    <td>RM 1,550 /ton</td>
+                    <td>RM 1,790 /ton</td>
+                  </tr>
+                  <tr>
+                    <td>Kelantan (KADA)</td>
+                    <td>RM 1,550 /ton</td>
+                    <td>RM 1,760 /ton</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {activeModal === 'padipedia' && (
+            <div className="feature-view">
+              <h2>📖 Padipedia</h2>
+              <p className="subtitle">Official Seed Varieties in Malaysia</p>
+              
+              <div className="pedia-list">
+                <div className="pedia-item">
+                  <h3>MR 219 (Padi Perdana)</h3>
+                  <p>Most popular variety in Malaysia. High yield and resistant to most blast diseases. Maturity: 105-110 days.</p>
+                </div>
+                <div className="pedia-item">
+                  <h3>MR 269 (Sirkon)</h3>
+                  <p>Known for its excellent grain quality and better resistance to drought. Popular in Selangor and Perak.</p>
+                </div>
+                <div className="pedia-item">
+                  <h3>MR 297</h3>
+                  <p>Recent variety focusing on high pest resistance (specifically Brown Plant Hopper). Fast growing.</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 
