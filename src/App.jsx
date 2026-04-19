@@ -10,20 +10,8 @@ function App() {
   const [sessions, setSessions] = useState([
     {
       id: 1,
-      title: 'Initial Diagnosis',
-      messages: [
-        { role: 'model', text: 'Welcome to Padi & Plates! Upload a photo of your Padi to get a health check and a recipe!', type: 'text', time: 'JUST NOW' },
-        { role: 'user', text: 'halo', type: 'text', time: 'JUST NOW' },
-        { role: 'model', text: "I've analyzed your request. Based on the Padi variety you mentioned, I recommend the Upland Red Congee. It's rich in vitamins and perfect for a nutritious meal.", type: 'text', time: 'JUST NOW' }
-      ]
-    },
-    {
-      id: 2,
-      title: 'Padi Fertilizer Routine',
-      messages: [
-        { role: 'user', text: 'What is a good fertilizer for early stage?', type: 'text', time: 'YESTERDAY' },
-        { role: 'model', text: 'For early stages of paddy growth, proper urea application is crucial. Make sure to apply it in splits to avoid wastage and ensure maximum absorption by the young seedlings.', type: 'text', time: 'YESTERDAY' }
-      ]
+      title: 'New Chat',
+      messages: []
     }
   ]);
   const [currentSessionId, setCurrentSessionId] = useState(1);
@@ -57,7 +45,7 @@ function App() {
       {
         id: newId,
         title: 'New Chat',
-        messages: [{ role: 'model', text: 'Welcome to Padi & Plates! Upload a photo of your Padi to get a health check and a recipe!', type: 'text', time: 'JUST NOW' }]
+        messages: []
       },
       ...prev
     ]);
