@@ -46,8 +46,8 @@ function App() {
 
     const q = query(
       collection(db, 'chats'), 
-      where('uid', '==', user.uid),
-      orderBy('lastUpdatedAt', 'desc')
+      where('userId', '==', user.uid),
+      orderBy('updatedAt', 'desc')
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -98,10 +98,10 @@ function App() {
     if (!user) return;
     try {
       const docRef = await addDoc(collection(db, 'chats'), {
-        uid: user.uid,
+        userId: user.uid,
         title: 'New Chat',
         messages: [],
-        lastUpdatedAt: serverTimestamp()
+        updatedAt: serverTimestamp()
       });
       setCurrentSessionId(docRef.id);
     } catch (err) {
@@ -232,7 +232,7 @@ function App() {
       await updateDoc(sessionRef, {
         messages: updatedMessages,
         title: newTitle,
-        lastUpdatedAt: serverTimestamp()
+        updatedAt: serverTimestamp()
       });
 
     } catch (error) {

@@ -117,8 +117,13 @@ app.post('/api/diagnose', upload.single('image'), async (req, res) => {
 app.use(express.static(path.join(__dirname, 'dist')));
 
 // SPA support: any unknown route serves index.html
-app.use((req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+// But only if it's not a request for a static file (like .js, .css)
+app.get('*', (req, res) => {
+  if (req.path.includes('.')) {
+    res.status(404).end();
+  } else {
+    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  }
 });
 
 const PORT = process.env.PORT || 8080;
