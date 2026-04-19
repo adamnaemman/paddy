@@ -22,7 +22,7 @@ if (!API_KEY) {
 }
 const genAI = new GoogleGenerativeAI(API_KEY);
 
-const MODEL_NAME = 'gemini-2.0-flash';
+const MODEL_NAME = 'gemini-2.5-flash';
 const SYSTEM_INSTRUCTION = `
     Kau adalah Pak Mat, seorang pakar penanaman padi yang dah berpengalaman lebih 30 tahun di Malaysia.
     Gaya percakapan kau mestilah mesra, macam sembang kat kedai kopi, tapi penuh dengan ilmu teknikal yang praktikal.
