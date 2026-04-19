@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -17,9 +17,12 @@ app.use(express.json());
 
 // Initialize Google Gen AI
 const API_KEY = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
-const ai = new GoogleGenAI({ apiKey: API_KEY });
+if (!API_KEY) {
+  console.error('CRITICAL: GEMINI_API_KEY is missing from environment variables!');
+}
+const genAI = new GoogleGenerativeAI(API_KEY);
 
-const MODEL_NAME = 'gemini-2.5-flash';
+const MODEL_NAME = 'gemini-1.5-flash';
 const SYSTEM_INSTRUCTION = `
     Kau adalah Pak Mat, seorang pakar penanaman padi yang dah berpengalaman lebih 30 tahun di Malaysia.
     Gaya percakapan kau mestilah mesra, macam sembang kat kedai kopi, tapi penuh dengan ilmu teknikal yang praktikal.
@@ -34,37 +37,25 @@ const SYSTEM_INSTRUCTION = `
     Contoh: "Eh, ni dah lari tajuk ni. Jom kita sembang pasal padi kita tu balik, baru masyuk!"
 `;
 
-// Helper to wrap the model call
-const getModel = () => ai.models.getGenerativeModel({
-  model: MODEL_NAME,
-  config: {
-    thinkingConfig: { thinkingBudget: -1 },
-    systemInstruction: [{ text: SYSTEM_INSTRUCTION }]
-  }
-});
-
 /**
  * API: Chat Proxy
  */
 app.post('/api/chat', async (req, res) => {
   try {
     const { message, history } = req.body;
+    const model = genAI.getGenerativeModel({ model: MODEL_NAME, systemInstruction: SYSTEM_INSTRUCTION });
     
-    const contents = [
-      ...(history || []),
-      { role: 'user', parts: [{ text: message }] }
-    ];
-
-    const result = await ai.models.generateContent({
-      model: MODEL_NAME,
-      config: {
-        thinkingConfig: { thinkingBudget: -1 },
-        systemInstruction: [{ text: SYSTEM_INSTRUCTION }]
-      },
-      contents: contents,
+    const chat = model.startChat({
+      history: (history || []).map(m => ({
+        role: m.role === 'model' ? 'model' : 'user',
+        parts: m.parts || [{ text: m.text }]
+      }))
     });
 
-    res.json({ text: result.text });
+    const result = await chat.sendMessage(message);
+    const response = await result.response;
+    res.json({ text: response.text() });
+
   } catch (error) {
     console.error('Proxy Chat Error:', error);
     res.status(500).json({ error: 'Maaf mat, Pak Mat pening sikit tadi. Cuba tanya balik.' });
@@ -80,33 +71,22 @@ app.post('/api/diagnose', upload.single('image'), async (req, res) => {
       return res.status(400).json({ error: 'Mana gambar bendang kau mat? Upload la dulu.' });
     }
 
+    const model = genAI.getGenerativeModel({ model: MODEL_NAME, systemInstruction: SYSTEM_INSTRUCTION });
     const promptText = req.body.prompt || "Pak Mat, tolong tengokkan gambar ni. Padi saya ni sakit apa ye?";
     
-    const contents = [
+    const result = await model.generateContent([
+      promptText,
       {
-        role: 'user',
-        parts: [
-          { text: promptText },
-          {
-            inlineData: {
-              data: req.file.buffer.toString('base64'),
-              mimeType: req.file.mimetype,
-            },
-          },
-        ],
+        inlineData: {
+          data: req.file.buffer.toString('base64'),
+          mimeType: req.file.mimetype,
+        },
       },
-    ];
+    ]);
 
-    const result = await ai.models.generateContent({
-      model: MODEL_NAME,
-      config: {
-        thinkingConfig: { thinkingBudget: -1 },
-        systemInstruction: [{ text: SYSTEM_INSTRUCTION }]
-      },
-      contents: contents,
-    });
+    const response = await result.response;
+    res.json({ text: response.text() });
 
-    res.json({ text: result.text });
   } catch (error) {
     console.error('Proxy Diagnose Error:', error);
     res.status(500).json({ error: 'Pak Mat tak dapat nak scan gambar tu la mat. Cuba lagi sekali.' });
