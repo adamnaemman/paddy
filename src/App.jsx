@@ -1,5 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db, auth } from './firebase';
+import { 
+  signInAnonymously, 
+  onAuthStateChanged 
+} from 'firebase/auth';
+import { 
+  collection, 
+  addDoc, 
+  query, 
+  where, 
+  onSnapshot, 
+  doc, 
+  updateDoc,
+  orderBy,
+  serverTimestamp 
+} from 'firebase/firestore';
 import { chatWithPakMat, diagnoseWithImage } from './gemini';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -7,14 +22,54 @@ import './index.css';
 import riceBg from './assets/rice-bg.png';
 
 function App() {
-  const [sessions, setSessions] = useState([
-    {
-      id: 1,
-      title: 'New Chat',
-      messages: []
-    }
-  ]);
-  const [currentSessionId, setCurrentSessionId] = useState(1);
+  const [user, setUser] = useState(null);
+  const [sessions, setSessions] = useState([]);
+  const [currentSessionId, setCurrentSessionId] = useState(null);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+
+  // Authentication
+  useEffect(() => {
+    signInAnonymously(auth).catch(err => console.error("Auth error:", err));
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setUser(user);
+      } else {
+        setUser(null);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Sync Sessions from Firestore
+  useEffect(() => {
+    if (!user) return;
+
+    const q = query(
+      collection(db, 'chats'), 
+      where('uid', '==', user.uid),
+      orderBy('lastUpdatedAt', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetchedSessions = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      if (fetchedSessions.length === 0 && !snapshot.metadata.fromCache) {
+        // Only create if we are sure it's empty (not just cold start)
+        createNewChat();
+      } else {
+        setSessions(fetchedSessions);
+        if (fetchedSessions.length > 0 && !currentSessionId) {
+          setCurrentSessionId(fetchedSessions[0].id);
+        }
+      }
+      setLoadingHistory(false);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
 
   const activeIndex = sessions.findIndex(s => s.id === currentSessionId);
   const messages = sessions[activeIndex]?.messages || [];
@@ -39,17 +94,19 @@ function App() {
     });
   };
 
-  const createNewChat = () => {
-    const newId = Date.now();
-    setSessions(prev => [
-      {
-        id: newId,
+  const createNewChat = async () => {
+    if (!user) return;
+    try {
+      const docRef = await addDoc(collection(db, 'chats'), {
+        uid: user.uid,
         title: 'New Chat',
-        messages: []
-      },
-      ...prev
-    ]);
-    setCurrentSessionId(newId);
+        messages: [],
+        lastUpdatedAt: serverTimestamp()
+      });
+      setCurrentSessionId(docRef.id);
+    } catch (err) {
+      console.error("Error creating chat:", err);
+    }
   };
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -142,7 +199,6 @@ function App() {
       if (image) {
         response = await diagnoseWithImage(image, input);
         
-        // Mock function to simulate a scan process
         const isHealthy = Math.random() > 0.5;
         setScanResult({
           statusLabel: isHealthy ? 'Sihat' : 'Berpenyakit',
@@ -156,18 +212,35 @@ function App() {
         setImage(null);
         setPreview(null);
       } else {
-        const history = messages
-          .filter((_, i) => i > 0 || messages[0].role === 'user')
-          .map(m => ({
-            role: m.role,
-            parts: [{ text: m.text }]
-          }));
+        const history = messages.map(m => ({
+          role: m.role,
+          parts: [{ text: m.text }]
+        }));
         response = await chatWithPakMat(input, history);
       }
-      setMessages(prev => [...prev, { role: 'model', text: response, type: 'text', time: 'JUST NOW' }]);
+
+      const botMessage = { role: 'model', text: response, type: 'text', time: 'JUST NOW' };
+      const updatedMessages = [...messages, userMessage, botMessage];
+      
+      // Update Firestore
+      const sessionRef = doc(db, 'chats', currentSessionId);
+      let newTitle = sessions[activeIndex].title;
+      if (newTitle === 'New Chat') {
+          newTitle = input.slice(0, 30) + (input.length > 30 ? '...' : '');
+      }
+
+      await updateDoc(sessionRef, {
+        messages: updatedMessages,
+        title: newTitle,
+        lastUpdatedAt: serverTimestamp()
+      });
+
     } catch (error) {
       console.error("Gemini Error:", error);
-      setMessages(prev => [...prev, { role: 'model', text: "Error: " + (error.message || "Unknown"), type: 'text', time: 'JUST NOW' }]);
+      const errorMessage = { role: 'model', text: "Error: " + (error.message || "Unknown"), type: 'text', time: 'JUST NOW' };
+      const updatedMessages = [...messages, userMessage, errorMessage];
+      const sessionRef = doc(db, 'chats', currentSessionId);
+      await updateDoc(sessionRef, { messages: updatedMessages });
     } finally {
       setLoading(false);
     }
