@@ -22,7 +22,7 @@ if (!API_KEY) {
 }
 const genAI = new GoogleGenerativeAI(API_KEY);
 
-const MODEL_NAME = 'gemini-2.5-flash';
+const MODEL_NAME = 'gemini-2.0-flash';
 const SYSTEM_INSTRUCTION = `
     Kau adalah Pak Mat, seorang pakar penanaman padi yang dah berpengalaman lebih 30 tahun di Malaysia.
     Gaya percakapan kau mestilah mesra, macam sembang kat kedai kopi, tapi penuh dengan ilmu teknikal yang praktikal.
@@ -45,8 +45,7 @@ app.post('/api/chat', async (req, res) => {
     const { message, history } = req.body;
     const model = genAI.getGenerativeModel({ 
       model: MODEL_NAME, 
-      systemInstruction: SYSTEM_INSTRUCTION,
-      thinking: true 
+      systemInstruction: SYSTEM_INSTRUCTION
     });
     
     const chat = model.startChat({
@@ -83,8 +82,7 @@ app.post('/api/diagnose', upload.single('image'), async (req, res) => {
 
     const model = genAI.getGenerativeModel({ 
       model: MODEL_NAME, 
-      systemInstruction: SYSTEM_INSTRUCTION,
-      thinking: true
+      systemInstruction: SYSTEM_INSTRUCTION
     });
     const promptText = req.body.prompt || "Pak Mat, tolong tengokkan gambar ni. Padi saya ni sakit apa ye?";
     
@@ -108,24 +106,27 @@ app.post('/api/diagnose', upload.single('image'), async (req, res) => {
 });
 
 // Serve static files from the Vite build directory
-const DIST_PATH = path.join(process.cwd(), 'dist');
-console.log(`INFO: Serving static files from: ${DIST_PATH}`);
+const DIST_PATH = path.resolve(__dirname, 'dist');
+console.log(`INFO: Current directory (__dirname): ${__dirname}`);
+console.log(`INFO: Attempting to serve static files from: ${DIST_PATH}`);
 
 app.use(express.static(DIST_PATH));
 
 // SPA support: any unknown route serves index.html
 app.use((req, res) => {
-  // If it's a direct file request (has extension) but reached here, it's truly a 404
-  if (req.path.includes('.') && !req.path.endsWith('.html')) {
-    console.warn(`WARN: File not found: ${req.path}`);
-    return res.status(404).end();
+  // If we got here, express.static didn't find the file.
+  // If it's a request for a static asset, return 404.
+  if (req.path.startsWith('/assets/')) {
+    console.warn(`WARN: Asset not found: ${req.path}`);
+    return res.status(404).send('Asset not found');
   }
-  
+
+  // Otherwise, serve index.html for SPA routing
   const indexPath = path.join(DIST_PATH, 'index.html');
   res.sendFile(indexPath, (err) => {
     if (err) {
-      console.error(`ERROR: Failed to send index.html: ${err.message}`);
-      res.status(500).send('Frontend not found. Please run "npm run build".');
+      console.error(`ERROR: Failed to serve index.html: ${err.message}`);
+      res.status(500).send('Frontend build (dist) not found. Please ensure gcp-build runs successfully.');
     }
   });
 });
