@@ -98,7 +98,7 @@ app.use(express.static(path.join(__dirname, 'dist')));
 
 // SPA support: any unknown route serves index.html
 // But only if it's not a request for a static file (like .js, .css)
-app.get('*', (req, res) => {
+app.use((req, res) => {
   if (req.path.includes('.')) {
     res.status(404).end();
   } else {
