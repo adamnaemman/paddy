@@ -25,6 +25,15 @@ Our journey began as a mission to empower the Malaysian paddy farming community:
 
 ---
 
+## 🤖 AI Disclosure
+
+In accordance with the hackathon rules, we disclose that this project used **AI-assisted coding tools**. 
+- **Tools Used:** [Antigravity AI](https://gemini.google.com/) / Google Gemini
+- **Application:** AI was utilized for boilerplate generation, logic optimization, and documentation assistance.
+- **Verification:** The team has fully reviewed and verified all AI-generated code and takes full responsibility for the entire codebase.
+
+---
+
 ## ✨ Key Features
 - **Paddy Disease Diagnosis:** Pak Mat identifies paddy diseases (e.g., Leaf Blast, Brown Planthopper) via images.
 - **Technical Advice:** Specific fertilizer and pesticide recommendations for the Malaysian market.
