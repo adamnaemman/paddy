@@ -22,7 +22,7 @@ if (!API_KEY) {
 }
 const genAI = new GoogleGenerativeAI(API_KEY);
 
-const MODEL_NAME = 'gemini-3-flash-preview';
+const MODEL_NAME = 'gemini-2.5-flash-lite';
 const SYSTEM_INSTRUCTION = `
     Kau adalah Pak Mat, seorang pakar penanaman padi yang dah berpengalaman lebih 30 tahun di Malaysia.
     Gaya percakapan kau mestilah mesra, macam sembang kat kedai kopi, tapi penuh dengan ilmu teknikal yang praktikal.
@@ -100,8 +100,11 @@ app.post('/api/diagnose', upload.single('image'), async (req, res) => {
     res.json({ text: response.text() });
 
   } catch (error) {
-    console.error('Proxy Diagnose Error:', error);
-    res.status(500).json({ error: 'Pak Mat tak dapat nak scan gambar tu la mat. Cuba lagi sekali.' });
+    console.error('--- PROXY DIAGNOSE ERROR ---');
+    console.error('Message:', error.message);
+    console.error('Stack:', error.stack);
+    console.error('----------------------------');
+    res.status(500).json({ error: 'Pak Mat tak dapat nak scan gambar tu la mat. Cuba lagi sekali. (Error: ' + (error.message || 'Unknown') + ')' });
   }
 });
 
