@@ -29,6 +29,8 @@ function App() {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [usePersistence, setUsePersistence] = useState(false);
   const [activeModal, setActiveModal] = useState(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   // Authentication
   useEffect(() => {
@@ -75,6 +77,8 @@ function App() {
         if (fetchedSessions.length > 0 && !currentSessionId) {
           setCurrentSessionId(fetchedSessions[0].id);
         }
+        // Auto-close history on item select (mobile)
+        setIsHistoryOpen(false);
       }
       setLoadingHistory(false);
     });
@@ -318,6 +322,29 @@ function App() {
   return (
     <>
       <div className="app-container">
+        {/* Mobile Header */}
+        <header className="mobile-header">
+          <button className="mobile-btn" onClick={() => setIsSidebarOpen(true)}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="24" height="24">
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+          </button>
+          <div className="brand" style={{ margin: 0 }}>
+            <h1 style={{ fontSize: '18px' }}>Padi & Plates</h1>
+          </div>
+          <button className="mobile-btn" onClick={() => setIsHistoryOpen(true)}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="24" height="24">
+              <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+          </button>
+        </header>
+
+        {/* Overlays for Mobile */}
+        {(isSidebarOpen || isHistoryOpen) && (
+          <div className="sidebar-overlay" onClick={() => { setIsSidebarOpen(false); setIsHistoryOpen(false); }}></div>
+        )}
 
       {showCamera && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
@@ -334,7 +361,8 @@ function App() {
         </div>
       )}
       {/* Sidebar */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${isSidebarOpen ? 'open' : ''}`}>
+        <button className="mobile-close-btn" onClick={() => setIsSidebarOpen(false)}>×</button>
         <div className="brand" style={{ marginBottom: '30px' }}>
           <h1>Padi & Plates</h1>
           <p>The Culinary Minimalist</p>
@@ -368,20 +396,20 @@ function App() {
 
         <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
           <ul className="nav-menu" style={{ gap: '15px' }}>
-            <li className="nav-item" onClick={() => setActiveModal('health')}>
+            <li className="nav-item" onClick={() => { setActiveModal('health'); setIsSidebarOpen(false); }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
               </svg>
               Bendang Health
             </li>
-            <li className="nav-item" onClick={() => setActiveModal('prices')}>
+            <li className="nav-item" onClick={() => { setActiveModal('prices'); setIsSidebarOpen(false); }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="12" y1="1" x2="12" y2="23"></line>
                 <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
               </svg>
               Harga Padi
             </li>
-            <li className="nav-item" onClick={() => setActiveModal('padipedia')}>
+            <li className="nav-item" onClick={() => { setActiveModal('padipedia'); setIsSidebarOpen(false); }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
                 <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
